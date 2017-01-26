@@ -73,8 +73,6 @@ class Chomikuj {
 		
 		//Get url
 		
-		http://chomikuj.pl/action/Upload/GetUrl/
-		
 		$postfields = array();
 		$postfields['accountid'] = $this->accountId;
 		$postfields['folderid'] = $folderId;
