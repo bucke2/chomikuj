@@ -1,4 +1,21 @@
 <?php
+/*
+
+To do:
+
+	important:
+	
+		- uploadFile(): checking if a file was actually uploaded and throwing exception if not
+		
+	not-so important for now:
+		
+		- getFolders getting first-level child folders only (and make an option to get the whole tree)
+		
+	not important:
+
+		- checking if a folder was created / removed successfully
+
+*/
 
 class Chomikuj {
 	
@@ -13,8 +30,8 @@ class Chomikuj {
 		curl_setopt($this->curl, CURLOPT_HEADER, 0);
 		curl_setopt($this->curl, CURLOPT_FOLLOWLOCATION, 1);
 		curl_setopt($this->curl, CURLOPT_RETURNTRANSFER, 1);
-		curl_setopt($this->curl, CURLOPT_CONNECTTIMEOUT, 20);
-		curl_setopt($this->curl, CURLOPT_TIMEOUT, 20);
+		curl_setopt($this->curl, CURLOPT_CONNECTTIMEOUT, 0);
+		curl_setopt($this->curl, CURLOPT_TIMEOUT, 0);
 		
 	}
 	
@@ -36,7 +53,7 @@ class Chomikuj {
 		
 		if(!$result = curl_exec($this->curl)) {
 			
-			throw new Exception('Curl error (while logging in).');
+			throw new ChomikujException('Curl error (while logging in): '.curl_error($this->curl));
 			
 		}
 		
@@ -44,7 +61,7 @@ class Chomikuj {
 		
 		if(empty($matches)) {
 			
-			throw new Exception('Couldn\'t retrieve account id.');
+			throw new ChomikujException('Couldn\'t retrieve account id.');
 			
 		}
 		
@@ -63,7 +80,7 @@ class Chomikuj {
 		
 		if(!curl_exec($this->curl)) {
 			
-			throw new Exception('Curl error (while logging out).');
+			throw new ChomikujException('Curl error (while logging out): '.curl_error($this->curl));
 			
 		}
 		
@@ -83,7 +100,7 @@ class Chomikuj {
 		
 		if(!$result = curl_exec($this->curl)) {
 			
-			throw new Exception('Curl error.');
+			throw new ChomikujException('Curl error: '.curl_error($this->curl));
 			
 		}
 		
@@ -91,7 +108,10 @@ class Chomikuj {
 		
 		//Upload file
 		
+		//First of these lines works on my PC and doesn't work on my VPS and the second works on VPS but does not on PC. I guess I should make a research to answer why is this happening.
 		$cfile = '@' . realpath($filename);
+		//$cfile = curl_file_create($filename);
+		
 		$postfields = array('files' => $cfile);
 		
 		curl_setopt($this->curl, CURLOPT_URL, $json->Url);
@@ -100,12 +120,12 @@ class Chomikuj {
 		
 		if(!$result = curl_exec($this->curl)) {
 			
-			throw new Exception('Curl error.');
+			throw new ChomikujException('Curl error: '.curl_error($this->curl));
 			
 		}
 		
 		$json = json_decode($result);
-		print_r($json);
+		//print_r($json);
 		
 	}
 	
@@ -152,7 +172,7 @@ class Chomikuj {
 		
 		if(!$result = curl_exec($this->curl)) {
 			
-			throw new Exception('Curl error.');
+			throw new ChomikujException('Curl error: '.curl_error($this->curl));
 			
 		}
 		
@@ -174,11 +194,136 @@ class Chomikuj {
 		
 		if(!$result = curl_exec($this->curl)) {
 			
-			throw new Exception('Curl error.');
+			throw new ChomikujException('Curl error: '.curl_error($this->curl));
 			
 		}
 		
-		echo $result;
+		//echo $result;
+		
+	}
+	
+	public function getFolders($folderId) {
+		
+		$postfields = array();
+		
+		$postfields['FolderId'] = $folderId;
+		$postfields['ChomikId'] = $this->accountId;
+		
+		curl_setopt($this->curl, CURLOPT_URL, 'http://chomikuj.pl/action/tree/loadtree');
+		curl_setopt($this->curl, CURLOPT_POST, 1);
+		curl_setopt($this->curl, CURLOPT_POSTFIELDS, $postfields);
+		
+		if(!$result = curl_exec($this->curl)) {
+			
+			throw new ChomikujException('Curl error: '.curl_error($this->curl));
+			
+		}
+		
+		preg_match_all('/href\=\"(.+?)\"\ rel\=\"([0-9]+)\"\ title\=\"(.+?)\"/',$result,$matches);
+		
+		$folders = array(
+			'paths' => $matches[1],
+			'ids' => $matches[2],
+			'names' => $matches[3]
+		);
+		
+		return $folders;
+		
+	}
+	
+	public function moveFile($fileId,$folderId,$destinationFolderId) {
+		
+		$postfields = array();
+		
+		$postfields['__RequestVerificationToken'] = $this->getToken();
+		$postfields['FolderId'] = $folderId; //This is actually needed
+		$postfields['FolderTo'] = $destinationFolderId;
+		$postfields['FileId'] = $fileId;
+		$postfields['ChomikId'] = $this->accountId;
+		
+		curl_setopt($this->curl, CURLOPT_URL, 'http://chomikuj.pl/action/FileDetails/MoveFileAction');
+		curl_setopt($this->curl, CURLOPT_POST, 1);
+		curl_setopt($this->curl, CURLOPT_POSTFIELDS, $postfields);
+		
+		if(!$result = curl_exec($this->curl)) {
+			
+			throw new ChomikujException('Curl error: '.curl_error($this->curl));
+			
+		}
+		
+		$json = json_decode($result);
+		
+		if(empty($json->IsSuccess)) {
+			
+			throw new ChomikujException('Couldn\'t move a file.');
+			
+		}
+		
+		//print_r($json);
+		
+	}
+	
+	public function copyFile($fileId,$folderId,$destinationFolderId) {
+		
+		$postfields = array();
+		
+		$postfields['__RequestVerificationToken'] = $this->getToken();
+		$postfields['FolderId'] = $folderId; //This is actually needed
+		$postfields['FolderTo'] = $destinationFolderId;
+		$postfields['FileId'] = $fileId;
+		$postfields['ChomikId'] = $this->accountId;
+		
+		curl_setopt($this->curl, CURLOPT_URL, 'http://chomikuj.pl/action/FileDetails/CopyFileAction');
+		curl_setopt($this->curl, CURLOPT_POST, 1);
+		curl_setopt($this->curl, CURLOPT_POSTFIELDS, $postfields);
+		
+		if(!$result = curl_exec($this->curl)) {
+			
+			throw new ChomikujException('Curl error: '.curl_error($this->curl));
+			
+		}
+		
+		$json = json_decode($result);
+		
+		if(empty($json->IsSuccess)) {
+			
+			throw new ChomikujException('Couldn\'t copy a file.');
+			
+		}
+		
+		//print_r($json);
+		
+	}
+	
+	public function renameFile($fileId,$newFilename,$newDescription) {
+		
+		$postfields = array();
+		
+		$postfields['__RequestVerificationToken'] = $this->getToken();
+		$postfields['FileId'] = $fileId;
+		$postfields['Name'] = $newFilename;
+		$postfields['Description'] = $newDescription;
+		//$postfields['ChomikId'] = $this->accountId;
+		
+		curl_setopt($this->curl, CURLOPT_URL, 'http://chomikuj.pl/action/FileDetails/EditNameAndDescAction');
+		curl_setopt($this->curl, CURLOPT_POST, 1);
+		curl_setopt($this->curl, CURLOPT_POSTFIELDS, $postfields);
+		
+		if(!$result = curl_exec($this->curl)) {
+			
+			throw new ChomikujException('Curl error: '.curl_error($this->curl));
+			
+		}
+		
+		$json = json_decode($result);
+		
+		if(empty($json->IsSuccess)) {
+			
+			throw new ChomikujException('Couldn\'t rename a file.');
+			
+		}
+		
+		//print_r($json);
 		
 	}
 	
@@ -189,7 +334,7 @@ class Chomikuj {
 		
 		if(!$result = curl_exec($this->curl)) {
 			
-			throw new Exception('Curl error.');
+			throw new ChomikujException('Curl error (while retrieving the token): '.curl_error($this->curl));
 			
 		}
 		
@@ -197,7 +342,7 @@ class Chomikuj {
 		
 		if(empty($matches)) {
 			
-			throw new Exception('Couldn\'t retrieve the token.');
+			throw new ChomikujException('Couldn\'t retrieve the token.');
 			
 		}
 		
@@ -206,5 +351,7 @@ class Chomikuj {
 	}
 	
 }
+
+class ChomikujException extends Exception {}
 
 ?>
